@@ -1,0 +1,24 @@
+{
+  "name": "crossword-whatsapp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WhatsApp bot that runs the group crossword game (board ingestion, grading, leaderboard, Shabbat lock)",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "list-groups": "node scripts/list-groups.js",
+    "test-scrape": "node scripts/test-scrape.js",
+    "test-board": "node scripts/test-board.js",
+    "test-ocr": "node scripts/test-ocr.js",
+    "test-render": "node scripts/test-render.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "cheerio": "^1.0.0",
+    "pino": "^9.4.0",
+    "playwright": "^1.47.0",
+    "qrcode-terminal": "^0.12.0",
+    "tesseract.js": "^5.1.1"
+  }
+}

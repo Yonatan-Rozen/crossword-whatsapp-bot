@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>לוח תשבץ</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f6f0e6;
+        --paper-2: #efe6d7;
+        --ink: #1f1a17;
+        --muted: #6f6258;
+        --gold: #c98a42;
+        --gold-deep: #9d642d;
+        --line: #2a231f;
+        --cell-shadow: rgba(17, 13, 10, 0.12);
+        --black: #16120f;
+        --white: #fffdf8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(
+            circle at top left,
+            rgba(201, 138, 66, 0.2),
+            transparent 30%
+          ),
+          radial-gradient(
+            circle at bottom right,
+            rgba(157, 100, 45, 0.15),
+            transparent 26%
+          ),
+          linear-gradient(180deg, #faf6ef 0%, var(--paper) 100%);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .poster {
+        width: min(1100px, 100%);
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.72),
+          rgba(255, 255, 255, 0.56)
+        );
+        border: 1px solid rgba(42, 35, 31, 0.14);
+        border-radius: 28px;
+        box-shadow: 0 24px 80px rgba(41, 28, 18, 0.18);
+        overflow: hidden;
+        position: relative;
+        backdrop-filter: blur(8px);
+      }
+
+      .poster::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(42, 35, 31, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(42, 35, 31, 0.03) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mask-image: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.12),
+          transparent 35%
+        );
+        pointer-events: none;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 22px 28px 12px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .date {
+        font-size: 2.1rem;
+        font-weight: 800;
+        color: #e5432f;
+        letter-spacing: 0.5px;
+        line-height: 1;
+      }
+
+      .title {
+        flex: 1;
+        text-align: center;
+        background: linear-gradient(180deg, #d98f5a, var(--gold));
+        color: #fffdf7;
+        padding: 14px 20px;
+        border-radius: 18px;
+        font-size: 1.15rem;
+        font-weight: 800;
+        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+      }
+
+      .meta {
+        font-size: 0.95rem;
+        color: var(--muted);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        padding: 10px 28px 28px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .board-shell {
+        display: flex;
+        justify-content: center;
+        padding: 10px 0 6px;
+      }
+
+      .board {
+        width: min(100%, 640px);
+        aspect-ratio: 1 / 1;
+        direction: ltr;
+        display: grid;
+        grid-template-columns: repeat(11, 1fr);
+        grid-template-rows: repeat(11, 1fr);
+        gap: 0;
+        border: 4px solid var(--line);
+        background: var(--line);
+        box-shadow:
+          0 16px 32px var(--cell-shadow),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+      }
+
+      .cell {
+        position: relative;
+        border: 1px solid var(--line);
+        overflow: hidden;
+        background: linear-gradient(180deg, #fffefa, var(--white));
+      }
+
+      .cell.white {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.97),
+          rgba(246, 238, 227, 0.95)
+        );
+      }
+
+      .cell.black {
+        background: linear-gradient(180deg, #25211d, var(--black));
+      }
+
+      .cell.black::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          circle at 30% 25%,
+          rgba(255, 255, 255, 0.08),
+          transparent 45%
+        );
+      }
+
+      .number {
+        position: absolute;
+        top: 3px;
+        right: 4px;
+        font-size: clamp(10px, 1.2vw, 16px);
+        line-height: 1;
+        color: rgba(24, 18, 14, 0.92);
+        font-weight: 800;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+        pointer-events: none;
+      }
+
+      .footnote {
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.98rem;
+        padding-bottom: 6px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 720px) {
+        .poster {
+          border-radius: 20px;
+        }
+        .topbar {
+          flex-direction: column;
+          align-items: stretch;
+          text-align: center;
+        }
+        .date {
+          font-size: 1.8rem;
+        }
+        .title {
+          font-size: 1rem;
+        }
+        .meta {
+          white-space: normal;
+        }
+        .content {
+          padding-inline: 16px;
+        }
+        .board {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="poster">
+      <section class="topbar">
+        <div class="date">19/6/26</div>
+        <div class="title">לוח התשבץ</div>
+        <div class="meta">מבוסס על הלוח הקבוע מהתמונה</div>
+      </section>
+
+      <section class="content">
+        <div class="board-shell">
+          <div id="board" class="board" aria-label="לוח תשבץ"></div>
+        </div>
+        <div class="footnote">
+          הריבועים השחורים קבועים, והמספרים מופיעים באותה פינה שבה הם צריכים
+          להיות בתשבץ.
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const boardRows = [
+        ".....#.....",
+        ".#.#.#.#.#.",
+        ".....#.....",
+        ".#.#.###.#.",
+        "..#.......#",
+        ".#.#.#.#.#.",
+        "#.......#..",
+        ".#.###.#.#.",
+        ".....#.....",
+        ".#.#.#.#.#.",
+        ".....#.....",
+      ];
+
+      function isBlack(row, col) {
+        return boardRows[row][col] === "#";
+      }
+
+      function generateNumbering() {
+        const rows = boardRows.length;
+        const cols = boardRows[0].length;
+        const numbering = Array.from({ length: rows }, () =>
+          Array(cols).fill(null),
+        );
+        let current = 0;
+
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = cols - 1; col >= 0; col -= 1) {
+            if (isBlack(row, col)) continue;
+
+            const acrossStart =
+              (col === cols - 1 || isBlack(row, col + 1)) &&
+              col - 1 >= 0 &&
+              !isBlack(row, col - 1);
+            const downStart =
+              (row === 0 || isBlack(row - 1, col)) &&
+              row + 1 < rows &&
+              !isBlack(row + 1, col);
+
+            if (acrossStart || downStart) {
+              current += 1;
+              numbering[row][col] = current;
+            }
+          }
+        }
+
+        return numbering;
+      }
+
+      const boardNumbers = generateNumbering();
+      const board = document.getElementById("board");
+
+      boardRows.forEach((row, rowIndex) => {
+        [...row].forEach((cell, colIndex) => {
+          const tile = document.createElement("div");
+          tile.className = `cell ${cell === "#" ? "black" : "white"}`;
+
+          const number = boardNumbers[rowIndex][colIndex];
+          if (number !== null) {
+            const label = document.createElement("span");
+            label.className = "number";
+            label.textContent = String(number);
+            tile.appendChild(label);
+          }
+
+          board.appendChild(tile);
+        });
+      });
+    </script>
+  </body>
+</html>
