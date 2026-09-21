@@ -18,10 +18,11 @@ function normalize(text) {
 }
 
 // Grades one "X מאוזן/מאונך - text" submission from a given user.
-// Returns { outcome: 'correct' | 'wrong', scored: boolean }.
+// Returns { outcome: 'correct' | 'wrong', scored: boolean, reminder?: boolean }.
 function gradeSubmission({ number, direction, text, userJid }) {
+  const board = model.buildBoard(state.getBoardRow().boardRows);
   const clueKey = `${number}:${direction}`;
-  const entry = model.getEntry(Number(number), direction);
+  const entry = board.getEntry(Number(number), direction);
   if (!entry)
     return { outcome: "wrong", scored: false, reason: "unknown-clue" };
 
@@ -50,12 +51,15 @@ function gradeSubmission({ number, direction, text, userJid }) {
     state.awardPoint(userJid, now);
   }
 
-  return { outcome: "correct", scored: eligible, clueKey };
+  const reminder = !eligible && !state.hasBeenReminded(userJid);
+
+  return { outcome: "correct", scored: eligible, clueKey, reminder };
 }
 
 function isBoardComplete() {
+  const board = model.buildBoard(state.getBoardRow().boardRows);
   const solved = state.getSolved();
-  const allKeys = model.allClueKeys();
+  const allKeys = board.allClueKeys();
   return allKeys.length > 0 && allKeys.every((key) => Boolean(solved[key]));
 }
 

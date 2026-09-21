@@ -1,12 +1,15 @@
 "use strict";
 
 const config = require("../config");
-const model = require("../board/model");
 const state = require("../game/state");
 const { gradeSubmission, isBoardComplete } = require("../game/grading");
 const { renderBoardImage } = require("../board/render");
-const { DATE_RE, normalizeDate, isValidDate } = require("../ocr/dateFromImage");
 const { fetchAnswerKey } = require("../scrape/answerKey");
+const { parseBoardRequest } = require("../scrape/boardRequest");
+const {
+  solveLayout,
+  clueLengthsFromEntries,
+} = require("../board/layoutSolver");
 
 function getMessageText(message) {
   return message.conversation || message.extendedTextMessage?.text || "";
@@ -31,67 +34,113 @@ function buildLeaderboardText() {
   return lines.join("\n");
 }
 
-// A board photo just arrives as a trigger - the actual date comes from whatever
-// message follows it, so we just arm a flag and wait.
-async function handleBoardImage(sock, jid) {
-  state.setAwaitingDate(true);
-  await sock.sendMessage(jid, {
-    text: "קיבלתי את תמונת הלוח! מה התאריך של הלוח? (למשל 19/06/2026)",
+async function sendBoardImage(sock, jid, caption) {
+  const board = state.getBoardRow();
+  const image = await renderBoardImage({
+    boardRows: board.boardRows,
+    date: board.date,
+    solved: state.getSolved(),
+    caption,
   });
+  await sock.sendMessage(jid, { image, caption });
 }
 
-async function handleDateMessage(sock, jid, date) {
-  state.setAwaitingDate(false);
-
-  let answerKey;
+// Tries to resolve `text` (a link or free text) into a new board request. Returns true if
+// the message was recognized and handled (regardless of success/failure), false if it wasn't
+// a board request at all so the caller should keep trying other handlers.
+async function handleBoardRequest(sock, jid, text) {
+  let request;
   try {
-    ({ entries: answerKey } = await fetchAnswerKey(date));
+    request = await parseBoardRequest(text);
+  } catch (err) {
+    console.error("Failed to parse board request:", err);
+    return false;
+  }
+  if (!request) return false;
+
+  let scraped;
+  try {
+    scraped = await fetchAnswerKey(request);
   } catch (err) {
     console.error("Scrape failed:", err);
     await sock.sendMessage(jid, {
-      text: `זיהיתי את התאריך ${date} אבל לא הצלחתי להביא את הפתרונות מהאתר. נסו שוב או דווחו לאדמין.`,
+      text: "לא הצלחתי להביא את הפתרונות מהאתר. נסו שוב או דווחו לאדמין.",
     });
-    return;
+    return true;
   }
 
-  state.startNewBoard(date, answerKey);
-  await sock.sendMessage(jid, {
-    text: `לוח חדש נטען לתאריך ${date} 🧩\nאפשר להתחיל לענות בפורמט: "12 מאוזן - תשובה". שלחו "${config.showBoardCommand}" כדי לראות את מצב הלוח.`,
+  const { entries, resolvedDate, resolvedTitle } = scraped;
+  if (Object.keys(entries).length === 0) {
+    await sock.sendMessage(jid, {
+      text: "לא מצאתי תשובות עבור הבקשה הזו. ודאו שהקישור/השם נכונים.",
+    });
+    return true;
+  }
+
+  const boardRows = solveLayout(clueLengthsFromEntries(entries));
+  if (!boardRows) {
+    await sock.sendMessage(jid, {
+      text: "מצאתי את הפתרונות אבל לא הצלחתי לשחזר את מבנה הלוח. דווחו לאדמין.",
+    });
+    return true;
+  }
+
+  const date = resolvedDate || request.date;
+  const seriesName = resolvedTitle || request.name;
+
+  state.startNewBoard({
+    date,
+    seriesName,
+    crosswordId: request.crosswordId,
+    boardRows,
+    answerKey: entries,
   });
+
+  await sock.sendMessage(jid, {
+    text: `לוח חדש נטען: ${seriesName || ""} ${date || ""} 🧩\nאפשר להתחיל לענות בפורמט: "12 מאוזן - תשובה". שלחו "?" כדי לראות את מצב הלוח.`,
+  });
+  return true;
 }
 
 async function handleShowBoard(sock, jid) {
-  const board = state.getBoardRow();
-  const image = await renderBoardImage({
-    date: board?.date,
-    solved: state.getSolved(),
-    caption: "מצב הלוח הנוכחי",
-  });
-  await sock.sendMessage(jid, { image, caption: "מצב הלוח הנוכחי" });
+  if (!state.hasActiveBoard()) {
+    await sock.sendMessage(jid, { text: "אין לוח פעיל כרגע." });
+    return;
+  }
+  await sendBoardImage(sock, jid, "מצב הלוח הנוכחי");
 }
 
 async function announceCompletion(sock, jid) {
-  const board = state.getBoardRow();
-  const image = await renderBoardImage({
-    date: board?.date,
-    solved: state.getSolved(),
-    caption: "הלוח הושלם! כל הכבוד לכולם 🎉",
-  });
-  await sock.sendMessage(jid, {
-    image,
-    caption: "הלוח הושלם! כל הכבוד לכולם 🎉",
-  });
-
+  await sendBoardImage(sock, jid, "הלוח הושלם! כל הכבוד לכולם 🎉");
   await sock.sendMessage(jid, { text: buildLeaderboardText() });
   state.setBoardFrozen(true);
 }
 
-// Ends the current board early (e.g. it wasn't fully solved) - announce results and stop taking answers.
-async function handleEndBoard(sock, jid) {
-  if (state.isBoardFrozen()) return;
+// Step 1: "סיום תשבץ" - ask for confirmation before actually ending the board.
+async function handleEndBoardRequest(sock, jid) {
+  if (!state.hasActiveBoard()) return;
+  state.setPendingEnd(true);
+  await sock.sendMessage(jid, {
+    text: `לסיים את התשבץ הנוכחי? שלחו "${config.endBoardConfirmWord}" לאישור.`,
+  });
+}
+
+// Step 2: "כן" confirmation - auto-fills unsolved answers, announces results, freezes the board.
+async function handleEndBoardConfirmed(sock, jid) {
+  state.clearPendingEnd();
+  if (state.isBoardFrozen() || !state.hasActiveBoard()) return;
+
+  const answerKey = state.getAnswerKey();
+  const solved = state.getSolved();
+  for (const clueKey of Object.keys(answerKey)) {
+    if (!solved[clueKey]) {
+      state.markSolved(clueKey, null, answerKey[clueKey]);
+    }
+  }
 
   const lines = ["תודה לכל המשתתפים! 🙌", "", buildLeaderboardText()];
   await sock.sendMessage(jid, { text: lines.join("\n") });
+  await sendBoardImage(sock, jid, "הלוח הסופי");
   state.setBoardFrozen(true);
 }
 
@@ -100,7 +149,7 @@ async function handleAnswerSubmission(sock, msg, match) {
   const [, number, direction, text] = match;
   const senderJid = getSenderJid(msg);
 
-  if (state.isBoardFrozen()) {
+  if (!state.hasActiveBoard() || state.isBoardFrozen()) {
     await sock.sendMessage(jid, {
       react: { text: config.emoji.wrong, key: msg.key },
     });
@@ -117,6 +166,13 @@ async function handleAnswerSubmission(sock, msg, match) {
     result.outcome === "correct" ? config.emoji.correct : config.emoji.wrong;
   await sock.sendMessage(jid, { react: { text: emoji, key: msg.key } });
 
+  if (result.outcome === "correct" && result.reminder) {
+    state.markReminded(senderJid);
+    await sock.sendMessage(jid, {
+      text: "שימו לב: כדי שתשובה תיספר לניקוד צריך לחכות שעה מהתשובה הנכונה האחרונה שלכם שנוקדה.",
+    });
+  }
+
   if (result.outcome === "correct" && isBoardComplete()) {
     await announceCompletion(sock, jid);
   }
@@ -132,59 +188,37 @@ function registerHandlers(sock) {
         if (msg.key.remoteJid !== config.groupJid) continue;
 
         const messageType = Object.keys(msg.message)[0];
-
-        if (messageType === "imageMessage") {
-          const caption = (msg.message.imageMessage.caption || "").trim();
-          const captionDateMatch = caption.match(DATE_RE);
-          const captionHasValidDate =
-            Boolean(captionDateMatch) && isValidDate(captionDateMatch);
-          const isBoardTrigger =
-            captionHasValidDate ||
-            config.newBoardTriggerWords.some((word) => caption.includes(word));
-
-          if (!isBoardTrigger) continue; // not a board photo - ignore silently
-
-          if (captionHasValidDate) {
-            await handleDateMessage(
-              sock,
-              msg.key.remoteJid,
-              normalizeDate(captionDateMatch),
-            );
-          } else {
-            await handleBoardImage(sock, msg.key.remoteJid);
-          }
+        if (
+          messageType !== "conversation" &&
+          messageType !== "extendedTextMessage"
+        )
           continue;
-        }
 
         const text = getMessageText(msg.message).trim();
         if (!text) continue;
 
-        if (state.isAwaitingDate()) {
-          const dateMatch = text.match(DATE_RE);
-          if (dateMatch && isValidDate(dateMatch)) {
-            await handleDateMessage(
-              sock,
-              msg.key.remoteJid,
-              normalizeDate(dateMatch),
-            );
-            continue;
-          }
+        if (state.isPendingEnd() && text === config.endBoardConfirmWord) {
+          await handleEndBoardConfirmed(sock, msg.key.remoteJid);
+          continue;
         }
 
-        if (text === config.showBoardCommand) {
+        if (config.showBoardCommands.includes(text)) {
           await handleShowBoard(sock, msg.key.remoteJid);
           continue;
         }
 
         if (text === config.endBoardCommand) {
-          await handleEndBoard(sock, msg.key.remoteJid);
+          await handleEndBoardRequest(sock, msg.key.remoteJid);
           continue;
         }
 
         const match = text.match(config.answerPattern);
         if (match) {
           await handleAnswerSubmission(sock, msg, match);
+          continue;
         }
+
+        await handleBoardRequest(sock, msg.key.remoteJid, text);
       } catch (err) {
         console.error("Failed to handle message:", err);
       }

@@ -13,13 +13,18 @@ function defaultState() {
   return {
     board: {
       date: null,
+      seriesName: null,
+      crosswordId: null,
+      boardRows: null,
       answerKey: {},
       solved: {},
       frozen: false,
       createdAt: null,
+      remindedUsers: [],
+      pendingEnd: null,
     },
     scores: {}, // userJid -> { score, lastScoredAt }
-    meta: { shabbatLocked: false, awaitingDate: false },
+    meta: { shabbatLocked: false },
   };
 }
 
@@ -46,16 +51,32 @@ function getBoardRow() {
 }
 
 // Starts a fresh board: wipes solved progress and all per-user scores/cooldowns.
-function startNewBoard(date, answerKey) {
+function startNewBoard({
+  date,
+  seriesName,
+  crosswordId,
+  boardRows,
+  answerKey,
+}) {
   data.board = {
     date,
+    seriesName,
+    crosswordId,
+    boardRows,
     answerKey,
     solved: {},
     frozen: false,
     createdAt: Date.now(),
+    remindedUsers: [],
+    pendingEnd: null,
   };
   data.scores = {};
   persist();
+}
+
+// A board is "active" once loaded and not yet frozen (manually ended or fully completed).
+function hasActiveBoard() {
+  return Boolean(data.board.date) && !data.board.frozen;
 }
 
 function getAnswerKey() {
@@ -118,19 +139,38 @@ function setShabbatLocked(locked) {
   persist();
 }
 
-// True after a board photo was posted, until a date is found in a following message.
-function isAwaitingDate() {
-  return Boolean(data.meta.awaitingDate);
+// One-time cooldown-abuse reminder bookkeeping (per board, per user).
+function hasBeenReminded(userJid) {
+  return (data.board.remindedUsers || []).includes(userJid);
 }
 
-function setAwaitingDate(awaiting) {
-  data.meta.awaitingDate = awaiting;
+function markReminded(userJid) {
+  if (!data.board.remindedUsers) data.board.remindedUsers = [];
+  if (!data.board.remindedUsers.includes(userJid)) {
+    data.board.remindedUsers.push(userJid);
+    persist();
+  }
+}
+
+// Two-step "סיום תשבץ" -> "כן" confirmation state.
+function setPendingEnd(pending) {
+  data.board.pendingEnd = pending;
   persist();
+}
+
+function clearPendingEnd() {
+  data.board.pendingEnd = null;
+  persist();
+}
+
+function isPendingEnd() {
+  return Boolean(data.board.pendingEnd);
 }
 
 module.exports = {
   getBoardRow,
   startNewBoard,
+  hasActiveBoard,
   getAnswerKey,
   getSolved,
   isClueSolved,
@@ -142,6 +182,9 @@ module.exports = {
   allScoresSorted,
   isShabbatLocked,
   setShabbatLocked,
-  isAwaitingDate,
-  setAwaitingDate,
+  hasBeenReminded,
+  markReminded,
+  setPendingEnd,
+  clearPendingEnd,
+  isPendingEnd,
 };

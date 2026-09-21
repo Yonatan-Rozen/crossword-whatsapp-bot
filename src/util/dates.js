@@ -1,8 +1,6 @@
 "use strict";
 
-// Extracts a DD/MM/YYYY date from a photographed crossword board using local OCR (tesseract.js).
-
-const { createWorker } = require("tesseract.js");
+// DD/MM/YYYY date parsing/validation, shared by board-request parsing and (formerly) OCR.
 
 const DATE_RE = /(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})/;
 
@@ -24,23 +22,11 @@ function isValidDate(match) {
   return d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2000 && y <= 2099;
 }
 
-async function extractDateFromImage(buffer) {
-  const worker = await createWorker("eng");
-  try {
-    await worker.setParameters({ tessedit_char_whitelist: "0123456789/.-" });
-    const {
-      data: { text },
-    } = await worker.recognize(buffer);
-
-    const match = text.match(DATE_RE);
-    if (!match) {
-      return { date: null, rawText: text };
-    }
-
-    return { date: normalizeDate(match), rawText: text };
-  } finally {
-    await worker.terminate();
-  }
+// Finds and normalizes a DD/MM/YYYY date anywhere in `text`, or returns null.
+function extractDate(text) {
+  const match = text.match(DATE_RE);
+  if (!match || !isValidDate(match)) return null;
+  return normalizeDate(match);
 }
 
-module.exports = { extractDateFromImage, normalizeDate, isValidDate, DATE_RE };
+module.exports = { DATE_RE, normalizeDate, isValidDate, extractDate };

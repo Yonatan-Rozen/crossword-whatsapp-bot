@@ -10,17 +10,14 @@
 // `data-content` attribute (CSS/JS only toggles its visibility on click).
 
 const cheerio = require("cheerio");
-const config = require("../config");
 
-function buildUrl(dateDDMMYYYY) {
-  const { baseUrl, wantsold, crossword, name } = config.answersPage;
-  const params = new URLSearchParams({
-    wantsold: String(wantsold),
-    crossword: String(crossword),
-    name,
-    date: dateDDMMYYYY,
-  });
-  return `${baseUrl}?${params.toString()}`;
+function buildUrl({ crosswordId, name, date }) {
+  const params = new URLSearchParams();
+  if (date) params.set("wantsold", "1");
+  params.set("crossword", String(crosswordId));
+  if (name) params.set("name", name);
+  if (date) params.set("date", date);
+  return `https://www.14across.co.il/answers.php?${params.toString()}`;
 }
 
 const CLUE_LABEL_RE = /(\d+)\s*(מאוזן|מאונך)/;
@@ -43,6 +40,21 @@ function parseEntriesFromDom($) {
   });
 
   return entries;
+}
+
+const { DATE_RE, normalizeDate, isValidDate } = require("../util/dates");
+
+// The page heading looks like "פתרונות לתשבץ היגיון תרתי משמע, דקל בנו, 04/09/2026" -
+// pull out the resolved date and series title (needed when the caller didn't supply a date).
+function parseHeading($) {
+  const heading = $("h1").first().text().trim();
+  const dateMatch = heading.match(DATE_RE);
+  const resolvedDate =
+    dateMatch && isValidDate(dateMatch) ? normalizeDate(dateMatch) : null;
+  let resolvedTitle = heading.replace(/^פתרונות לתשבץ( היגיון)?\s*/, "");
+  if (dateMatch) resolvedTitle = resolvedTitle.replace(dateMatch[0], "");
+  resolvedTitle = resolvedTitle.replace(/,\s*$/, "").trim();
+  return { resolvedDate, resolvedTitle: resolvedTitle || null };
 }
 
 async function fetchViaHttp(url) {
@@ -71,23 +83,24 @@ async function fetchViaBrowser(url) {
   }
 }
 
-async function fetchAnswerKey(dateDDMMYYYY) {
-  const url = buildUrl(dateDDMMYYYY);
+async function fetchAnswerKey({ crosswordId, name, date }) {
+  const url = buildUrl({ crosswordId, name, date });
   let html = await fetchViaHttp(url);
-  let entries = parseEntriesFromDom(cheerio.load(html));
+  let $ = cheerio.load(html);
+  let entries = parseEntriesFromDom($);
 
   if (Object.keys(entries).length === 0) {
     html = await fetchViaBrowser(url);
-    entries = parseEntriesFromDom(cheerio.load(html));
+    $ = cheerio.load(html);
+    entries = parseEntriesFromDom($);
   }
 
   if (Object.keys(entries).length === 0) {
-    throw new Error(
-      `Could not find any .question_number/.actual-answer pairs at ${url}`,
-    );
+    return { url, entries: {}, resolvedDate: null, resolvedTitle: null };
   }
 
-  return { url, entries };
+  const { resolvedDate, resolvedTitle } = parseHeading($);
+  return { url, entries, resolvedDate, resolvedTitle };
 }
 
 module.exports = { buildUrl, parseEntriesFromDom, fetchAnswerKey };

@@ -1,38 +1,39 @@
 "use strict";
 
-// Manual verification script: fetch a real board's answers and print what was parsed.
-// Usage: node scripts/test-scrape.js 04/09/2026
+// Manual verification script: resolve a board request (URL or free text) and print what
+// was scraped.
+// Usage: node scripts/test-scrape.js "https://www.14across.co.il/answers.php?crossword=12&..."
+//        node scripts/test-scrape.js "לוח תרתי משמע 04/09/2026"
 
 const { fetchAnswerKey } = require("../src/scrape/answerKey");
-const model = require("../src/board/model");
+const { parseBoardRequest } = require("../src/scrape/boardRequest");
 
 async function main() {
-  const date = process.argv[2];
-  if (!date) {
-    console.error("Usage: node scripts/test-scrape.js DD/MM/YYYY");
+  const text = process.argv.slice(2).join(" ");
+  if (!text) {
+    console.error('Usage: node scripts/test-scrape.js "<url or free text>"');
     process.exit(1);
   }
 
-  const { url, entries } = await fetchAnswerKey(date);
+  const request = await parseBoardRequest(text);
+  if (!request) {
+    console.error("Could not parse a board request from that text.");
+    process.exit(1);
+  }
+  console.log("Parsed request:", request);
+
+  const { url, entries, resolvedDate, resolvedTitle } =
+    await fetchAnswerKey(request);
   console.log("URL:", url);
+  console.log(
+    "Resolved title:",
+    resolvedTitle,
+    "| Resolved date:",
+    resolvedDate,
+  );
   console.log("\n--- Parsed entries ---\n");
   console.log(JSON.stringify(entries, null, 2));
   console.log("\nTotal parsed:", Object.keys(entries).length);
-
-  console.log("\n--- Length cross-check against grid ---\n");
-  for (const [clueKey, text] of Object.entries(entries)) {
-    const [number, direction] = clueKey.split(":");
-    const entry = model.getEntry(Number(number), direction);
-    if (!entry) {
-      console.log(`${clueKey}: NO MATCHING GRID ENTRY (text="${text}")`);
-      continue;
-    }
-    if (entry.length !== text.length) {
-      console.log(
-        `${clueKey}: length mismatch - grid=${entry.length} text="${text}" (len ${text.length})`,
-      );
-    }
-  }
 }
 
 main().catch((err) => {

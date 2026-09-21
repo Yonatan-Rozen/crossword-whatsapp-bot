@@ -1,7 +1,22 @@
 "use strict";
 
-// Manual verification: compare ported JS grid numbering against crossword_board.py's render_board().
-const { renderTextBoard, allClueKeys } = require("../src/board/model");
+// Manual verification: prints a sample dynamically-solved board's ASCII numbering.
+const { buildBoard } = require("../src/board/model");
 
-console.log(renderTextBoard());
-console.log("\nTotal clue slots (across+down):", allClueKeys().length);
+const SAMPLE_ROWS = [
+  ".....#.....",
+  ".#.#.#.#.#.",
+  ".....#.....",
+  ".#.#.###.#.",
+  "..#.......#",
+  ".#.#.#.#.#.",
+  "#.......#..",
+  ".#.###.#.#.",
+  ".....#.....",
+  ".#.#.#.#.#.",
+  ".....#.....",
+];
+
+const board = buildBoard(SAMPLE_ROWS);
+console.log(board.renderTextBoard());
+console.log("\nTotal clue slots (across+down):", board.allClueKeys().length);
